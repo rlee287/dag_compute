@@ -3,10 +3,6 @@
 use slotmap::{HopSlotMap, new_key_type};
 
 use std::collections::{HashSet, VecDeque};
-use std::cell::RefCell;
-
-#[derive(Debug, Default)]
-struct GraphToken {}
 
 new_key_type!{struct ComputeGraphKey;}
 
@@ -51,53 +47,59 @@ impl<T: Clone> Node<T> {
 }
 
 #[derive(Debug)]
-pub struct NodeHandle<'a> {
+pub struct NodeHandle {
     node_key: ComputeGraphKey,
-    graph_token: &'a GraphToken
+    graph_id: usize
 }
 
 pub struct ComputationGraph<T> {
-    node_storage: RefCell<HopSlotMap<ComputeGraphKey, Node<T>>>,
+    node_storage: HopSlotMap<ComputeGraphKey, Node<T>>,
     //node_refcount:
-    output_node: RefCell<Option<ComputeGraphKey>>,
-    graph_token: GraphToken
+    output_node: Option<ComputeGraphKey>,
+    graph_id: usize
 }
 impl<T> Default for ComputationGraph<T> {
     fn default() -> Self {
-        ComputationGraph {
-            node_storage: RefCell::new(HopSlotMap::default()),
-            output_node: RefCell::new(None),
-            graph_token: GraphToken::default()
-        }
+        let mut obj = ComputationGraph {
+            node_storage: HopSlotMap::default(),
+            output_node: None,
+            graph_id: 0
+        };
+        obj.graph_id = (&obj.node_storage as *const HopSlotMap<_,_>) as usize;
+        obj
     }
 }
 impl<T: Clone> ComputationGraph<T> {
     pub fn new() -> ComputationGraph<T>{
         ComputationGraph::default()
     }
-    pub fn insert_node(&self, name: String, func: Box<dyn Fn(&[T]) -> T>) -> NodeHandle {
+    pub fn insert_node(&mut self, name: String, func: Box<dyn Fn(&[T]) -> T>) -> NodeHandle {
         let node = Node::new(name, func);
-        let node_key = self.node_storage.borrow_mut().insert(node);
+        let node_key = self.node_storage.insert(node);
         NodeHandle {
             node_key,
-            graph_token: &self.graph_token
+            graph_id: self.graph_id
         }
     }
-    pub fn designate_output(&self, node: &NodeHandle) {
+    pub fn designate_output(&mut self, node: &NodeHandle) {
+        self.output_node.ok_or(()).expect_err("Output was already designated");
+        assert_eq!(node.graph_id, self.graph_id,
+            "Received NodeHandle for different graph");
         let node_key = node.node_key;
-        self.output_node.borrow().ok_or(()).expect_err("Output was already designated");
-        assert!(self.node_storage.borrow().contains_key(node_key));
-        *self.output_node.borrow_mut() = Some(node_key);
+        assert!(self.node_storage.contains_key(node_key));
+        self.output_node = Some(node_key);
     }
-    pub fn set_inputs(&self, node: &mut NodeHandle, inputs: &[&NodeHandle]) {
+    pub fn set_inputs(&mut self, node: &mut NodeHandle, inputs: &[&NodeHandle]) {
+        assert_eq!(node.graph_id, self.graph_id,
+            "Received NodeHandle for different graph");
         let input_keys: Vec<_> = inputs.iter().map(|handle| handle.node_key).collect();
         assert!(!input_keys.contains(&node.node_key), "Inputs would create self-loop");
         // Other cycles would be caught at computation time
-        self.node_storage.borrow_mut().get_mut(node.node_key).unwrap().input_nodes = input_keys;
+        self.node_storage.get_mut(node.node_key).unwrap().input_nodes = input_keys;
     }
 
     fn computation_order(&mut self) -> impl IntoIterator<Item = ComputeGraphKey> {
-        let out_node = self.output_node.get_mut().expect("Output not yet designated");
+        let out_node = self.output_node.expect("Output not yet designated");
 
         // Toposort the graph, marking used nodes
         let mut sort_list = VecDeque::new();
@@ -106,7 +108,7 @@ impl<T: Clone> ComputationGraph<T> {
         debug_assert!(temporary_set.is_empty());
 
         // Sweep phase of mark-and-sweep GC
-        self.node_storage.get_mut().retain(|k, _| {
+        self.node_storage.retain(|k, _| {
             sort_list.contains(&k)
         });
         /*
@@ -126,7 +128,7 @@ impl<T: Clone> ComputationGraph<T> {
         }
         assert!(!temporary_set.contains(&node), "Computation graph contains cycle");
         temporary_set.insert(node);
-        for input in self.node_storage.borrow().get(node).unwrap().input_nodes.iter() {
+        for input in self.node_storage.get(node).unwrap().input_nodes.iter() {
             self.toposort_helper(*input, final_list, temporary_set);
         }
         temporary_set.remove(&node);
@@ -134,25 +136,23 @@ impl<T: Clone> ComputationGraph<T> {
     }
 
     pub fn compute(mut self) -> T {
-        self.output_node.get_mut().expect("Output not yet designated");
+        self.output_node.expect("Output not yet designated");
         //let node_storage_mut = ;
         for node_key in self.computation_order() {
-            let node_storage_mut = self.node_storage.get_mut();
-
-            let node = node_storage_mut.get(node_key).unwrap();
+            let node = self.node_storage.get(node_key).unwrap();
             println!("Evaluating {}", node.name);
 
             let node_input_keyvec = node.input_nodes.clone();
             let node_inputs: Vec<_> = match node_input_keyvec.len() {
                 0 => Vec::new(),
                 _ => node_input_keyvec.into_iter().map(|key| {
-                        node_storage_mut.get(key).unwrap().computed_val()
+                        self.node_storage.get(key).unwrap().computed_val()
                     }).collect()
             };
             // Rebind node as &mut to perform calculation
-            let node = node_storage_mut.get_mut(node_key).unwrap();
+            let node = self.node_storage.get_mut(node_key).unwrap();
             node.eval(node_inputs.as_slice());
         }
-        self.node_storage.get_mut().get(self.output_node.take().unwrap()).unwrap().computed_val()
+        self.node_storage.get(self.output_node.take().unwrap()).unwrap().computed_val()
     }
 }
