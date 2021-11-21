@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use slotmap::{HopSlotMap, new_key_type};
+use slotmap::{SlotMap, new_key_type};
 
 use std::collections::{HashSet, VecDeque};
 
@@ -24,9 +24,6 @@ impl<T: Clone> Node<T> {
             input_nodes: Vec::default(),
             output_cache: None
         }
-    }
-    pub fn name(&self) -> &str {
-        &self.name
     }
     // Passing arg slice instead of node handles is a leaky encapsulation
     // Doesn't seem to be possible to remove leakiness safely though?
@@ -56,7 +53,7 @@ pub struct NodeHandle {
 }
 
 pub struct ComputationGraph<T> {
-    node_storage: HopSlotMap<ComputeGraphKey, Node<T>>,
+    node_storage: SlotMap<ComputeGraphKey, Node<T>>,
     //node_refcount:
     output_node: Option<ComputeGraphKey>,
     graph_id: usize
@@ -64,11 +61,11 @@ pub struct ComputationGraph<T> {
 impl<T> Default for ComputationGraph<T> {
     fn default() -> Self {
         let mut obj = ComputationGraph {
-            node_storage: HopSlotMap::default(),
+            node_storage: SlotMap::default(),
             output_node: None,
             graph_id: 0
         };
-        obj.graph_id = (&obj.node_storage as *const HopSlotMap<_,_>) as usize;
+        obj.graph_id = (&obj.node_storage as *const SlotMap<_,_>) as usize;
         obj
     }
 }

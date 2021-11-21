@@ -7,5 +7,4 @@ edition = "2021"
 [features]
 
 [dependencies]
-slotmap = "1.0.6"
-
+slotmap = "1.0"
