@@ -7,16 +7,17 @@ use std::collections::{HashSet, VecDeque};
 new_key_type!{struct ComputeGraphKey;}
 
 // TODO: generalize Vec<&T> -> T to Vec<&I> -> O
+type BoxedEvalFn<T> = Box<dyn Fn(&[T]) -> T + Send + Sync>;
+
 pub(crate) struct Node<T> {
     name: String,
-    func: Box<dyn Fn(&[T]) -> T>,
+    func: BoxedEvalFn<T>,
     input_nodes: Vec<ComputeGraphKey>,
     output_cache: Option<T>
-    // TODO: add &'a GraphToken maybe: omitting as Nodes will be SlotMap entries
 }
 // TODO: Remove Clone bound and use Arc<T> for return value instead?
 impl<T: Clone> Node<T> {
-    fn new(name: String, func: Box<dyn Fn(&[T]) -> T>) -> Node<T> {
+    fn new(name: String, func: BoxedEvalFn<T>) -> Node<T> {
         Node {
             name,
             func,
@@ -27,6 +28,8 @@ impl<T: Clone> Node<T> {
     pub fn name(&self) -> &str {
         &self.name
     }
+    // Passing arg slice instead of node handles is a leaky encapsulation
+    // Doesn't seem to be possible to remove leakiness safely though?
     pub fn eval(&mut self, args: &[T]) -> T {
         if self.output_cache.is_none() {
             self.output_cache = Some((self.func)(args));
@@ -46,7 +49,7 @@ impl<T: Clone> Node<T> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct NodeHandle {
     node_key: ComputeGraphKey,
     graph_id: usize
@@ -73,13 +76,16 @@ impl<T: Clone> ComputationGraph<T> {
     pub fn new() -> ComputationGraph<T>{
         ComputationGraph::default()
     }
-    pub fn insert_node(&mut self, name: String, func: Box<dyn Fn(&[T]) -> T>) -> NodeHandle {
+    pub fn insert_node(&mut self, name: String, func: BoxedEvalFn<T>) -> NodeHandle {
         let node = Node::new(name, func);
         let node_key = self.node_storage.insert(node);
         NodeHandle {
             node_key,
             graph_id: self.graph_id
         }
+    }
+    pub fn node_name(&self, node: &NodeHandle) -> String {
+        self.node_storage.get(node.node_key).unwrap().name.clone()
     }
     pub fn designate_output(&mut self, node: &NodeHandle) {
         self.output_node.ok_or(()).expect_err("Output was already designated");
@@ -137,20 +143,17 @@ impl<T: Clone> ComputationGraph<T> {
 
     pub fn compute(mut self) -> T {
         self.output_node.expect("Output not yet designated");
-        //let node_storage_mut = ;
         for node_key in self.computation_order() {
             let node = self.node_storage.get(node_key).unwrap();
             println!("Evaluating {}", node.name);
 
             let node_input_keyvec = node.input_nodes.clone();
-            let node_inputs: Vec<_> = match node_input_keyvec.len() {
-                0 => Vec::new(),
-                _ => node_input_keyvec.into_iter().map(|key| {
-                        self.node_storage.get(key).unwrap().computed_val()
-                    }).collect()
-            };
+            let node_inputs: Vec<_> = node_input_keyvec.into_iter().map(|key| {
+                self.node_storage.get(key).unwrap().computed_val()
+            }).collect();
             // Rebind node as &mut to perform calculation
             let node = self.node_storage.get_mut(node_key).unwrap();
+            // Toposort guarantees that inputs will be ready when needed
             node.eval(node_inputs.as_slice());
         }
         self.node_storage.get(self.output_node.take().unwrap()).unwrap().computed_val()
