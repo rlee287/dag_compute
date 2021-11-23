@@ -34,17 +34,17 @@ fn main() {
             data_tmp[window_length-1..].copy_from_slice(&arr[0].unwrap());
             // Boxcar filter: inefficient but suffices to demonstrate
             let final_data_vec: Vec<_> = data_tmp.windows(window_length).map(
-                |window| {
-                    let mut avg = 0.0;
-                    for item in window {
-                        avg += item;
+                    |window| {
+                        let mut avg = 0.0;
+                        for item in window {
+                            avg += item;
+                        }
+                        avg /= window_length as f32;
+                        avg
                     }
-                    avg /= window_length as f32;
-                    avg
-                }
-            )
-            .map(|x| x*f32::sqrt(window_length as f32/2.0))
-            .collect();
+                )
+                .map(|x| x*f32::sqrt(window_length as f32/2.0))
+                .collect();
             assert_eq!(final_data_vec.len(), SAMPLE_COUNT);
             let mut final_data = [0.0; SAMPLE_COUNT];
             final_data.copy_from_slice(&final_data_vec);
