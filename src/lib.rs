@@ -82,6 +82,8 @@ impl<T: Clone> ComputationGraph<T> {
         }
     }
     pub fn node_name(&self, node: &NodeHandle) -> String {
+        assert_eq!(node.graph_id, self.graph_id,
+            "Received NodeHandle for different graph");
         self.node_storage.get(node.node_key).unwrap().name.clone()
     }
     pub fn designate_output(&mut self, node: &NodeHandle) {
