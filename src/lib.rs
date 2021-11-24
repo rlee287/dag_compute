@@ -55,7 +55,6 @@ pub struct NodeHandle {
 pub struct ComputationGraph<T> {
     node_storage: SlotMap<ComputeGraphKey, Node<T>>,
     node_refcount: SecondaryMap<ComputeGraphKey, u32>,
-    //node_refcount:
     output_node: Option<ComputeGraphKey>,
     graph_id: usize
 }
@@ -121,8 +120,14 @@ impl<T: Clone> ComputationGraph<T> {
         debug_assert!(temporary_set.is_empty());
 
         // Sweep phase of mark-and-sweep GC
-        self.node_storage.retain(|k, _| {
-            sort_list.contains(&k)
+        self.node_storage.retain(|k, del_node| {
+            let keep = sort_list.contains(&k);
+            if !keep {
+                for input_key in &del_node.input_nodes {
+                    *self.node_refcount.get_mut(*input_key).unwrap() -= 1;
+                }
+            }
+            keep
         });
         /*
          * We traversed the edge in the opposite direction of the dataflow
