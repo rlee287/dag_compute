@@ -101,6 +101,8 @@ impl<T: Clone> ComputationGraph<T> {
         assert_eq!(node.graph_id, self.graph_id,
             "Received NodeHandle for different graph");
         let input_keys: Vec<_> = inputs.iter().map(|handle| handle.node_key).collect();
+        // Mutability rules actually enforce the non-circular-loop case
+        // Keep assert in case duplication happens elsewhere
         assert!(!input_keys.contains(&node.node_key), "Inputs would create self-loop");
         // Other cycles would be caught at computation time
 
