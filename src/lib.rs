@@ -47,12 +47,15 @@ impl<T: Clone> Node<T> {
     }
 }
 
+// DO NOT DERIVE Copy OR Clone: HANDLE MUST BE NON-FUNGIBLE
 #[derive(Debug, PartialEq, Eq)]
+/// An opaque handle to a node in a [`ComputationGraph`].
 pub struct NodeHandle {
     node_key: ComputeGraphKey,
     graph_id: usize
 }
 
+/// A DAG that expresses a computation flow between nodes.
 pub struct ComputationGraph<T> {
     node_storage: SlotMap<ComputeGraphKey, Node<T>>,
     node_refcount: SecondaryMap<ComputeGraphKey, u32>,
@@ -67,6 +70,8 @@ impl<T> Default for ComputationGraph<T> {
             output_node: None,
             graph_id: 0
         };
+        // Use pointer numerical value to tie NodeHandles to ComputationGraphs
+        // No potential risks here as we only need this as an opaque token
         obj.graph_id = (&obj.node_storage as *const SlotMap<_,_>) as usize;
         obj
     }
@@ -75,6 +80,10 @@ impl<T: Clone> ComputationGraph<T> {
     pub fn new() -> ComputationGraph<T>{
         ComputationGraph::default()
     }
+    /// Inserts a new node, returning an opaque node handle.
+    /// 
+    /// While the library does not enforce name uniqueness, this is
+    /// highly recommended to make debugging easier.
     pub fn insert_node(&mut self, name: String, func: BoxedEvalFn<T>) -> NodeHandle {
         let node = Node::new(name, func);
         let node_key = self.node_storage.insert(node);
@@ -84,11 +93,13 @@ impl<T: Clone> ComputationGraph<T> {
             graph_id: self.graph_id
         }
     }
+    /// Returns a reference to a node's name.
     pub fn node_name(&self, node: &NodeHandle) -> &str {
         assert_eq!(node.graph_id, self.graph_id,
             "Received NodeHandle for different graph");
         &self.node_storage.get(node.node_key).unwrap().name
     }
+    /// Designates the given node as the output node.
     pub fn designate_output(&mut self, node: &NodeHandle) {
         self.output_node.ok_or(()).expect_err("Output was already designated");
         assert_eq!(node.graph_id, self.graph_id,
@@ -98,6 +109,10 @@ impl<T: Clone> ComputationGraph<T> {
         self.output_node = Some(node_key);
         *self.node_refcount.get_mut(node_key).unwrap() += 1;
     }
+    /// Sets the given node's inputs.
+    /// 
+    /// It is the caller's responsibility to avoid creating loops,
+    /// which are only detected at computation time.
     pub fn set_inputs(&mut self, node: &mut NodeHandle, inputs: &[&NodeHandle]) {
         assert_eq!(node.graph_id, self.graph_id,
             "Received NodeHandle for different graph");
@@ -113,6 +128,7 @@ impl<T: Clone> ComputationGraph<T> {
         self.node_storage.get_mut(node.node_key).unwrap().input_nodes = input_keys;
     }
 
+    /// Determines a valid order for node evaluation.
     fn computation_order(&mut self) -> impl IntoIterator<Item = ComputeGraphKey> {
         debug!("Computing node evaluation order");
         let out_node = self.output_node.expect("Output not yet designated");
@@ -161,6 +177,7 @@ impl<T: Clone> ComputationGraph<T> {
         final_list.insert(0, node);
     }
 
+    /// Computes and returns the value of the output node.
     pub fn compute(mut self) -> T {
         self.output_node.expect("Output not yet designated");
         info!("Evaluating DAG");
@@ -179,6 +196,7 @@ impl<T: Clone> ComputationGraph<T> {
                 if *in_refcnt == 0 {
                     nodes_cleanup.push(key);
                 }
+                // Toposort guarantees that inputs will be ready when needed
                 self.node_storage.get(key).unwrap().computed_val()
             }).collect();
             // The refs in node_inputs are live as long as node_input_arcs is
@@ -193,9 +211,9 @@ impl<T: Clone> ComputationGraph<T> {
             }
             // Rebind node as &mut to perform calculation
             let node = self.node_storage.get_mut(node_key).unwrap();
-            // Toposort guarantees that inputs will be ready when needed
             node.eval(node_inputs.as_slice());
         }
+        // Assert checks that only the output node is left
         assert_eq!(self.node_storage.len(), 1);
         let output_key = self.output_node.take().unwrap();
         // Remove instead of get because we want an owned Node
