@@ -6,8 +6,6 @@ use rand::distributions::Uniform;
 use std::fs::File;
 use std::io::Write;
 
-use wav;
-
 const SAMPLE_COUNT: usize = 96000;
 const SAMPLE_RATE: u32 = 48000;
 
@@ -64,9 +62,7 @@ fn main() {
             );
 
             let vec_raw_data: Vec<f32> = arrs[0].unwrap()
-                .iter()
-                .map(|x| *x)
-                .collect();
+                .iter().copied().collect();
             let raw_data = wav::BitDepth::from(vec_raw_data);
             let mut raw_file = File::create("noise.wav").unwrap();
             wav::write(wav_header, &raw_data, &mut raw_file).unwrap();
@@ -74,9 +70,7 @@ fn main() {
             drop(raw_file);
 
             let vec_filt_data: Vec<f32> = arrs[1].unwrap()
-                .iter()
-                .map(|x| *x)
-                .collect();
+                .iter().copied().collect();
             let filt_data = wav::BitDepth::from(vec_filt_data);
             let mut filt_file = File::create("noise_filtered.wav").unwrap();
             wav::write(wav_header, &filt_data, &mut filt_file).unwrap();
