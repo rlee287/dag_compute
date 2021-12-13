@@ -82,10 +82,10 @@ impl<T: Clone> ComputationGraph<T> {
             graph_id: self.graph_id
         }
     }
-    pub fn node_name(&self, node: &NodeHandle) -> String {
+    pub fn node_name(&self, node: &NodeHandle) -> &str {
         assert_eq!(node.graph_id, self.graph_id,
             "Received NodeHandle for different graph");
-        self.node_storage.get(node.node_key).unwrap().name.clone()
+        &self.node_storage.get(node.node_key).unwrap().name
     }
     pub fn designate_output(&mut self, node: &NodeHandle) {
         self.output_node.ok_or(()).expect_err("Output was already designated");
