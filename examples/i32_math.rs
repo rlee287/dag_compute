@@ -17,7 +17,7 @@ fn main() {
             let mut prod = 1;
             for item in x.iter() {
                 println!("prod *= {}", item);
-                prod *= item;
+                prod *= *item;
             }
             println!("prod = {}", prod);
             prod
@@ -28,7 +28,7 @@ fn main() {
             let mut sum = 0;
             for item in x.iter() {
                 println!("sum += {}", item);
-                sum += item;
+                sum += *item;
             }
             println!("sum = {}", sum);
             sum

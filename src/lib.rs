@@ -3,17 +3,19 @@
 use slotmap::{SlotMap, SecondaryMap, new_key_type};
 
 use std::collections::{HashSet, VecDeque};
+use std::sync::Arc;
+use std::ops::Deref;
 
 new_key_type!{struct ComputeGraphKey;}
 
 // TODO: generalize Vec<&T> -> T to Vec<&I> -> O
-type BoxedEvalFn<T> = Box<dyn Fn(&[T]) -> T + Send + Sync>;
+type BoxedEvalFn<T> = Box<dyn Fn(&[&T]) -> T + Send + Sync>;
 
 pub(crate) struct Node<T> {
     name: String,
     func: BoxedEvalFn<T>,
     input_nodes: Vec<ComputeGraphKey>,
-    output_cache: Option<T>
+    output_cache: Option<Arc<T>>
 }
 // TODO: Remove Clone bound and use Arc<T> for return value instead?
 impl<T: Clone> Node<T> {
@@ -27,19 +29,14 @@ impl<T: Clone> Node<T> {
     }
     // Passing arg slice instead of node handles is a leaky encapsulation
     // Doesn't seem to be possible to remove leakiness safely though?
-    pub fn eval(&mut self, args: &[T]) -> T {
+    pub fn eval(&mut self, args: &[&T]){
         if self.output_cache.is_none() {
-            self.output_cache = Some((self.func)(args));
-        }
-        if let Some(ref val) = self.output_cache {
-            return val.clone();
-        } else {
-            panic!("Node cache is none despite computation completion");
+            self.output_cache = Some(Arc::new((self.func)(args)));
         }
     }
-    pub fn computed_val(&self) -> T {
+    pub fn computed_val(&self) -> Arc<T> {
         if let Some(ref val) = self.output_cache {
-            return val.clone();
+            val.clone()
         } else {
             panic!("Node cache is none for computed_val call");
         }
@@ -164,7 +161,7 @@ impl<T: Clone> ComputationGraph<T> {
 
             let node_input_keyvec = node.input_nodes.clone();
             let mut nodes_cleanup = Vec::with_capacity(node_input_keyvec.len());
-            let node_inputs: Vec<_> = node_input_keyvec.into_iter().map(|key| {
+            let node_input_arcs: Vec<_> = node_input_keyvec.into_iter().map(|key| {
                 let in_refcnt = self.node_refcount.get_mut(key).unwrap();
                 assert!(*in_refcnt > 0);
                 *in_refcnt -= 1;
@@ -173,6 +170,11 @@ impl<T: Clone> ComputationGraph<T> {
                 }
                 self.node_storage.get(key).unwrap().computed_val()
             }).collect();
+            // The refs in node_inputs are live as long as node_input_arcs is
+            let mut node_inputs = Vec::with_capacity(node_input_arcs.len());
+            for arc in node_input_arcs.iter() {
+                node_inputs.push(arc.deref());
+            }
 
             for old_key in nodes_cleanup {
                 self.node_storage.remove(old_key);
@@ -185,6 +187,16 @@ impl<T: Clone> ComputationGraph<T> {
             node.eval(node_inputs.as_slice());
         }
         assert_eq!(self.node_storage.len(), 1);
-        self.node_storage.get(self.output_node.take().unwrap()).unwrap().computed_val()
+        let output_key = self.output_node.take().unwrap();
+        // Remove instead of get because we want an owned Node
+        let output_node = self.node_storage.remove(output_key).unwrap();
+        let output_val_arc = output_node.computed_val();
+        drop(output_node);
+        /*
+         * We just computed the output value and didn't hand it to anyone else
+         * We dropped the output node, which would have held the only other copy
+         * There is exactly one copy of the Arc, so try_unwrap must succeed
+         */
+        Arc::try_unwrap(output_val_arc).ok().unwrap()
     }
 }

@@ -8,7 +8,7 @@ fn test_add_basic() {
         Box::new(|x| {
             let mut sum = 0;
             for item in x.iter() {
-                sum += item;
+                sum += *item;
             }
             sum
         })
