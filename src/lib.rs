@@ -31,16 +31,18 @@ impl<T: Clone> Node<T> {
     }
     // Passing arg slice instead of node handles is a leaky encapsulation
     // Doesn't seem to be possible to remove leakiness safely though?
-    pub fn eval(&mut self, args: &[&T]){
+    pub fn eval(&mut self, args: &[&T]) {
         if self.output_cache.is_none() {
             self.output_cache = Some(Arc::new((self.func)(args)));
+        } else {
+            panic!("Node is already evaluated");
         }
     }
     pub fn computed_val(&self) -> Arc<T> {
         if let Some(ref val) = self.output_cache {
             val.clone()
         } else {
-            panic!("Node cache is none for computed_val call");
+            panic!("Node has not yet been evaluated");
         }
     }
 }
