@@ -125,6 +125,7 @@ impl<T: Clone> ComputationGraph<T> {
                 for input_key in &del_node.input_nodes {
                     *self.node_refcount.get_mut(*input_key).unwrap() -= 1;
                 }
+                self.node_refcount.remove(k);
             }
             keep
         });
