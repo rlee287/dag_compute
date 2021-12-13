@@ -6,6 +6,8 @@ use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use std::ops::Deref;
 
+use log::{info, debug, trace};
+
 new_key_type!{struct ComputeGraphKey;}
 
 // TODO: generalize Vec<&T> -> T to Vec<&I> -> O
@@ -110,6 +112,7 @@ impl<T: Clone> ComputationGraph<T> {
     }
 
     fn computation_order(&mut self) -> impl IntoIterator<Item = ComputeGraphKey> {
+        debug!("Computing node evaluation order");
         let out_node = self.output_node.expect("Output not yet designated");
 
         // Toposort the graph, marking used nodes
@@ -122,10 +125,13 @@ impl<T: Clone> ComputationGraph<T> {
         self.node_storage.retain(|k, del_node| {
             let keep = sort_list.contains(&k);
             if !keep {
+                trace!("Sweeping node {}", del_node.name);
                 for input_key in &del_node.input_nodes {
                     *self.node_refcount.get_mut(*input_key).unwrap() -= 1;
                 }
                 self.node_refcount.remove(k);
+            } else {
+                trace!("Keeping node {}", del_node.name)
             }
             keep
         });
@@ -155,10 +161,12 @@ impl<T: Clone> ComputationGraph<T> {
 
     pub fn compute(mut self) -> T {
         self.output_node.expect("Output not yet designated");
-        for node_key in self.computation_order() {
+        info!("Evaluating DAG");
+        let compute_order = self.computation_order();
+        debug!("Computing node values");
+        for node_key in compute_order {
             let node = self.node_storage.get(node_key).unwrap();
-            println!("Evaluating {}", node.name);
-            println!("{:?}", self.node_refcount);
+            trace!("Evaluating node {}", node.name);
 
             let node_input_keyvec = node.input_nodes.clone();
             let mut nodes_cleanup = Vec::with_capacity(node_input_keyvec.len());
@@ -184,7 +192,6 @@ impl<T: Clone> ComputationGraph<T> {
             // Rebind node as &mut to perform calculation
             let node = self.node_storage.get_mut(node_key).unwrap();
             // Toposort guarantees that inputs will be ready when needed
-            println!("{:?}", self.node_refcount);
             node.eval(node_inputs.as_slice());
         }
         assert_eq!(self.node_storage.len(), 1);
