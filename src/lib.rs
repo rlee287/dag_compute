@@ -1,10 +1,13 @@
 #![forbid(unsafe_code)]
 
 use slotmap::{SlotMap, SecondaryMap, new_key_type};
+use slotmap::Key as KeyTrait;
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashSet, HashMap, VecDeque};
 use std::sync::Arc;
 use std::ops::Deref;
+use std::marker::PhantomData;
+use std::fmt;
 
 use log::{info, debug, trace};
 
@@ -48,7 +51,7 @@ impl<T: Clone> Node<T> {
 }
 
 // DO NOT DERIVE Copy OR Clone: HANDLE MUST BE NON-FUNGIBLE
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 /// An opaque handle to a node in a [`ComputationGraph`].
 pub struct NodeHandle {
     node_key: ComputeGraphKey,
@@ -126,6 +129,12 @@ impl<T: Clone> ComputationGraph<T> {
             *self.node_refcount.get_mut(*key).unwrap() += 1;
         }
         self.node_storage.get_mut(node.node_key).unwrap().input_nodes = input_keys;
+    }
+    /// Emits a DOT graph of the computation graph.
+    /// 
+    /// Nodes are labeled with names, and the output node is rectangular.
+    pub fn dot_graph(&self) -> impl fmt::Display + '_ {
+        DAGComputeDisplay::new(self)
     }
 
     /// Determines a valid order for node evaluation.
@@ -226,5 +235,94 @@ impl<T: Clone> ComputationGraph<T> {
          * There is exactly one copy of the Arc, so try_unwrap must succeed
          */
         Arc::try_unwrap(output_val_arc).ok().unwrap()
+    }
+}
+
+struct DAGComputeDisplay<'a, T> {
+    /*
+     * We only really need edge_list, but hold a PhantomData to slotmap_ref
+     * This prevents changes to the DAG so we only need to compute stuff once
+     */
+    // TODO: make this actual ref?
+    slotmap_ref: PhantomData<&'a SlotMap<ComputeGraphKey, Node<T>>>,
+    names: HashMap<ComputeGraphKey, &'a str>,
+    output_node: Option<ComputeGraphKey>,
+    edge_list: Vec<(ComputeGraphKey, ComputeGraphKey)>
+}
+impl<'a, T> DAGComputeDisplay<'a, T> {
+    fn new(map: &'a ComputationGraph<T>) -> DAGComputeDisplay<'a, T> {
+        let true_keyset: HashMap<ComputeGraphKey, &'a str> = map.node_storage
+            .keys()
+            .map(|key| (key, map.node_storage.get(key).unwrap().name.as_str()))
+            .collect();
+        let mut explored_keyset: HashSet<ComputeGraphKey> = HashSet::new();
+        let mut edge_list = Vec::new();
+        // len is more efficient than full equality
+        // We need this to account for ill-formed graphs (don't reject here)
+        while true_keyset.len() > explored_keyset.len() {
+            debug_assert!(explored_keyset.is_subset(
+                &true_keyset.keys().copied().collect()));
+            // Do BFS to make the final dot file more human-readable
+            let mut bfs_queue: VecDeque<ComputeGraphKey> = VecDeque::new();
+            let mut bfs_root: Option<ComputeGraphKey> = None;
+            for key in true_keyset.keys() {
+                if !explored_keyset.contains(key) {
+                    bfs_root = Some(*key);
+                    break;
+                }
+            }
+            let bfs_root = bfs_root.unwrap(); // Rebind and assert
+
+            bfs_queue.push_back(bfs_root);
+            explored_keyset.insert(bfs_root);
+            while !bfs_queue.is_empty() {
+                let current = bfs_queue.pop_front().unwrap();
+                for input in map.node_storage.get(current).unwrap()
+                        .input_nodes.iter() {
+                    edge_list.push((*input, current));
+                    // Insert returns true if new element was added
+                    if explored_keyset.insert(*input) {
+                        bfs_queue.push_back(*input);
+                    }
+                }
+            }
+        }
+        debug_assert_eq!(true_keyset.keys().copied().collect::<HashSet<_>>(),
+                explored_keyset);
+        DAGComputeDisplay {
+            slotmap_ref: PhantomData::default(),
+            names: true_keyset,
+            output_node: map.output_node,
+            edge_list
+        }
+    }
+}
+impl<'a, T> fmt::Display for DAGComputeDisplay<'a, T> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(fmt, "strict digraph {{")?;
+        for (node, name) in self.names.iter() {
+            let node_id = node.data().as_ffi();
+            let escaped_name: String = name.chars().map(|c| {
+                match c {
+                    '"' => r#"\""#.to_owned(),
+                    c => c.to_string()
+                }
+            }).collect();
+            // TODO: mark the output somehow
+            write!(fmt, "{} [label=\"{}\"", node_id, escaped_name)?;
+            if let Some(out) = self.output_node {
+                if out == *node {
+                    write!(fmt, ", shape=box")?;
+                }
+            }
+            writeln!(fmt, "];")?;
+        }
+        for edge in self.edge_list.iter() {
+            // Use the u64 as_ffi to handle duplicate names
+            let from_id = edge.0.data().as_ffi();
+            let to_id = edge.1.data().as_ffi();
+            writeln!(fmt, "{}->{};", from_id, to_id)?;
+        }
+        writeln!(fmt, "}}")
     }
 }

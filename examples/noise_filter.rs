@@ -82,6 +82,8 @@ fn main() {
     graph.set_inputs(&mut outputfile_handle,
         &[&noisegen_handle, &filter_handle]);
     graph.designate_output(&outputfile_handle);
+    let mut dot_file = File::create("noise_comp_graph.gv").unwrap();
+    write!(dot_file, "{}", graph.dot_graph()).unwrap();
 
     graph.compute();
 }
