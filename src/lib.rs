@@ -48,6 +48,16 @@ impl<T> Node<T> {
         }
     }
 }
+impl<T: fmt::Debug> fmt::Debug for Node<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "NodeHandle {{ ")?;
+        write!(f, "name: {:?}, ", self.name)?;
+        write!(f, "func: ..., ")?;
+        write!(f, "input_nodes: {:?}, ", self.input_nodes)?;
+        write!(f, "output_cache: {:?}", self.output_cache)?;
+        write!(f, " }}")
+    }
+}
 
 // DO NOT DERIVE Copy OR Clone: HANDLE MUST BE NON-FUNGIBLE
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -58,6 +68,7 @@ pub struct NodeHandle {
 }
 
 /// A DAG that expresses a computation flow between nodes.
+#[derive(Debug)]
 pub struct ComputationGraph<T> {
     node_storage: SlotMap<ComputeGraphKey, Node<T>>,
     node_refcount: SecondaryMap<ComputeGraphKey, u32>,
