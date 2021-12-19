@@ -19,3 +19,4 @@ log = "0.4"
 [dev-dependencies]
 wav = "1.0"
 rand = {version = "0.8", default-features = false, features = ["getrandom", "small_rng"]}
+version-sync = { version = ">=0.9.3, < 0.10.0", default-features = false, features = ["html_root_url_updated"] }
