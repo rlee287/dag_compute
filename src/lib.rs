@@ -13,7 +13,6 @@ use log::{info, debug, trace};
 
 new_key_type!{struct ComputeGraphKey;}
 
-// TODO: generalize Vec<&T> -> T to Vec<&I> -> O
 type BoxedEvalFn<T> = Box<dyn Fn(&[&T]) -> T + Send + Sync>;
 
 pub(crate) struct Node<T> {
@@ -22,8 +21,7 @@ pub(crate) struct Node<T> {
     input_nodes: Vec<ComputeGraphKey>,
     output_cache: Option<Arc<T>>
 }
-// TODO: Remove Clone bound and use Arc<T> for return value instead?
-impl<T: Clone> Node<T> {
+impl<T> Node<T> {
     fn new(name: String, func: BoxedEvalFn<T>) -> Node<T> {
         Node {
             name,
@@ -79,7 +77,7 @@ impl<T> Default for ComputationGraph<T> {
         obj
     }
 }
-impl<T: Clone> ComputationGraph<T> {
+impl<T> ComputationGraph<T> {
     pub fn new() -> ComputationGraph<T>{
         ComputationGraph::default()
     }
