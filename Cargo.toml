@@ -3,6 +3,11 @@ name = "dag_compute"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+description = "A library for the construction of arbitrary computation DAGs and the expression of dataflow graphs"
+homepage = "https://github.com/rlee287/dag_compute"
+repository = "https://github.com/rlee287/dag_compute"
+documentation = "https://docs.rs/dag_compute"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]

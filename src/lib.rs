@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+#![doc(html_root_url = "https://docs.rs/dag_compute/0.1.0")]
 
 use slotmap::{SlotMap, SecondaryMap, new_key_type};
 use slotmap::Key as KeyTrait;
@@ -306,7 +307,6 @@ impl<'a, T> fmt::Display for DAGComputeDisplay<'a, T> {
                     c => c.to_string()
                 }
             }).collect();
-            // TODO: mark the output somehow
             write!(fmt, "{} [label=\"{}\"", node_id, escaped_name)?;
             if let Some(out) = self.output_node {
                 if out == *node {
