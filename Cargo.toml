@@ -7,8 +7,10 @@ description = "A library for the construction of arbitrary computation DAGs and 
 repository = "https://github.com/rlee287/dag_compute"
 documentation = "https://docs.rs/dag_compute"
 readme = "README.md"
+keywords = [ "dataflow" ]
+# Could add concurrency if rayon support is added later
+categories = [ "data-structures", "algorithms" ]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
 
 [dependencies]
